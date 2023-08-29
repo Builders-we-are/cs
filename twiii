@@ -1,59 +1,67 @@
-const express = require('express');
-const mongoose = require('mongoose');
-const ejs = require('ejs');
-const path = require('path');
+from flask import Flask, jsonify, request, send_file, Response
+from flask_cors import CORS
+from pymongo import MongoClient
+import os
 
-const app = express();
-const port = process.env.PORT || 3000;
 
-// Set the view engine to EJS
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+app = Flask(__name__)
+CORS(app) 
+# MongoDB connection
+client = MongoClient('mongodb://localhost:27017/')
+db = client['cesuim']  # Replace with your actual database name
+collection = db['cesuimfiless']  # Replace with your collection name
 
-// MongoDB setup
-mongoose.connect('mongodb://localhost/your-database-name', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-});
-const db = mongoose.connection;
+@app.route('/api/getFilenames')
+def get_filenames():
+    # Query MongoDB for filenames
+    filenames = [doc['name'] for doc in collection.find({}, {'_id': 0, 'name': 1})]
 
-// Check for MongoDB connection errors
-db.on('error', console.error.bind(console, 'MongoDB connection error:'));
-db.once('open', () => {
-  console.log('Connected to MongoDB');
-});
+    return jsonify(filenames)
 
-// Define a schema and model for your CZML data
-const czmlSchema = new mongoose.Schema({
-  layerId: String,
-  czmlData: String,
-});
+@app.route('/api/getCzmlFile/<filename>')
+def get_czml_file(filename):
+    czml_path = os.path.join(upload_dir, filename)
 
-const CzmlModel = mongoose.model('Czml', czmlSchema);
+    if not os.path.isfile(czml_path):
+        return jsonify({'error': 'CZML file not found'})
 
-// Routes
-app.get('/getLayerFiles/:layerId', async (req, res) => {
-  const layerId = req.params.layerId;
+    # Send the CZML file to the frontend with appropriate headers
+    return send_file(czml_path, as_attachment=True, mimetype='application/json')
 
-  try {
-    // Find CZML data based on the provided layerId
-    const czmlDocument = await CzmlModel.findOne({ layerId });
+# Define the directory to store CZML files
+upload_dir = 'backend/uploads'
 
-    if (!czmlDocument) {
-      return res.status(404).send('CZML data not found');
-    }
+@app.route('/api/uploadCzml', methods=['POST'])
+def upload_czml():
 
-    // Render the CZML data using EJS
-    res.render('czml', { czmlData: czmlDocument.czmlData });
-  } catch (error) {
-    console.error('Error fetching CZML data:', error);
-    res.status(500).send('Internal Server Error');
-  }
-});
+    try:
 
-// Serve static files (CSS, JS, etc.) from the public folder
-app.use(express.static(path.join(__dirname, 'public')));
+        if 'czmlFile' not in request.files:
+            return jsonify({'error': 'No file part'})
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+        file = request.files['czmlFile']
+
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'})
+        
+        if not file.filename.endswith('.czml'):
+            return jsonify({'error': 'File must have a .czml extension'})
+
+
+        # Save the file to the server
+        if file:
+            filename = os.path.join(upload_dir, file.filename)
+            file.save(filename)
+
+            # Add file information to MongoDB
+            file_info = {'name': file.filename, 'location': filename}
+            collection.insert_one(file_info)
+
+            return jsonify({'message': 'CZML file uploaded and data saved successfully'})
+
+    except Exception as e:
+        return jsonify({'error': f'Error uploading CZML file: {str(e)}'})
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
