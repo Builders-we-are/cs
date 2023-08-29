@@ -1,0 +1,59 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const ejs = require('ejs');
+const path = require('path');
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Set the view engine to EJS
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
+// MongoDB setup
+mongoose.connect('mongodb://localhost/your-database-name', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+const db = mongoose.connection;
+
+// Check for MongoDB connection errors
+db.on('error', console.error.bind(console, 'MongoDB connection error:'));
+db.once('open', () => {
+  console.log('Connected to MongoDB');
+});
+
+// Define a schema and model for your CZML data
+const czmlSchema = new mongoose.Schema({
+  layerId: String,
+  czmlData: String,
+});
+
+const CzmlModel = mongoose.model('Czml', czmlSchema);
+
+// Routes
+app.get('/getLayerFiles/:layerId', async (req, res) => {
+  const layerId = req.params.layerId;
+
+  try {
+    // Find CZML data based on the provided layerId
+    const czmlDocument = await CzmlModel.findOne({ layerId });
+
+    if (!czmlDocument) {
+      return res.status(404).send('CZML data not found');
+    }
+
+    // Render the CZML data using EJS
+    res.render('czml', { czmlData: czmlDocument.czmlData });
+  } catch (error) {
+    console.error('Error fetching CZML data:', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
+// Serve static files (CSS, JS, etc.) from the public folder
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
