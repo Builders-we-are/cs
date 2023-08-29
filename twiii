@@ -1,67 +1,75 @@
-from flask import Flask, jsonify, request, send_file, Response
-from flask_cors import CORS
-from pymongo import MongoClient
-import os
+import '../Frontend/css/widgets.css';
+import Cesium from 'cesium';
+import axios from 'axios';
 
+const viewer = new Cesium.Viewer('cesiumContainer');
 
-app = Flask(__name__)
-CORS(app) 
-# MongoDB connection
-client = MongoClient('mongodb://localhost:27017/')
-db = client['cesuim']  # Replace with your actual database name
-collection = db['cesuimfiless']  # Replace with your collection name
+const backendUrl = 'http://localhost:5000';
 
-@app.route('/api/getFilenames')
-def get_filenames():
-    # Query MongoDB for filenames
-    filenames = [doc['name'] for doc in collection.find({}, {'_id': 0, 'name': 1})]
+const fetchFilenames = () => {
+  axios.get(`${backendUrl}/api/getFilenames`)
+    .then((response) => {
+      const filenames = response.data;
 
-    return jsonify(filenames)
+      const dropdown = document.createElement('select');
+      filenames.forEach((filename) => {
+        const option = document.createElement('option');
+        option.text = filename;
+        option.value = filename;
+        dropdown.appendChild(option);
+      });
 
-@app.route('/api/getCzmlFile/<filename>')
-def get_czml_file(filename):
-    czml_path = os.path.join(upload_dir, filename)
+      const filenameDropdown = document.getElementById('filenameDropdown');
+      filenameDropdown.innerHTML = '';
+      filenameDropdown.appendChild(dropdown);
+    })
+    .catch((error) => {
+      console.error('Error fetching filenames:', error);
+    });
+}
 
-    if not os.path.isfile(czml_path):
-        return jsonify({'error': 'CZML file not found'})
+const fileUploadForm = document.getElementById('czmlFileUploadForm');
+const fileInput = document.getElementById('czmlFileInput');
 
-    # Send the CZML file to the frontend with appropriate headers
-    return send_file(czml_path, as_attachment=True, mimetype='application/json')
+fileUploadForm.addEventListener('submit', (event) => {
+  event.preventDefault();
 
-# Define the directory to store CZML files
-upload_dir = 'backend/uploads'
+  const file = fileInput.files[0];
 
-@app.route('/api/uploadCzml', methods=['POST'])
-def upload_czml():
+  if (file) {
+    const formData = new FormData();
+    formData.append('czmlFile', file);
 
-    try:
+    axios.post(`${backendUrl}/api/uploadCzml`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+      .then((response) => {
+        console.log(response.data.message);
+        fetchFilenames();
+      })
+      .catch((error) => {
+        console.error('Error uploading CZML file:', error);
+      });
+  }
+});
 
-        if 'czmlFile' not in request.files:
-            return jsonify({'error': 'No file part'})
+const loadCzmlFile = (selectedFilename) => {
+  Cesium.CzmlDataSource.load(`/uploads/${selectedFilename}`)
+    .then((dataSource) => {
+      viewer.dataSources.removeAll();
+      viewer.dataSources.add(dataSource);
+    })
+    .catch((error) => {
+      console.error('Error loading CZML file:', error);
+    });
+}
 
-        file = request.files['czmlFile']
+const filenameDropdown = document.getElementById('filenameDropdown');
+filenameDropdown.addEventListener('change', (event) => {
+  const selectedFilename = event.target.value;
+  loadCzmlFile(selectedFilename);
+});
 
-        if file.filename == '':
-            return jsonify({'error': 'No selected file'})
-        
-        if not file.filename.endswith('.czml'):
-            return jsonify({'error': 'File must have a .czml extension'})
-
-
-        # Save the file to the server
-        if file:
-            filename = os.path.join(upload_dir, file.filename)
-            file.save(filename)
-
-            # Add file information to MongoDB
-            file_info = {'name': file.filename, 'location': filename}
-            collection.insert_one(file_info)
-
-            return jsonify({'message': 'CZML file uploaded and data saved successfully'})
-
-    except Exception as e:
-        return jsonify({'error': f'Error uploading CZML file: {str(e)}'})
-
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+fetchFilenames();
