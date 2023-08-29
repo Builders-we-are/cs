@@ -1,0 +1,97 @@
+// api/server.js
+const express = require('express');
+const multer = require('multer');
+const mongoose = require('mongoose');
+const path = require('path');
+const axios = require('axios');
+
+const app = express();
+const port = process.env.PORT || 5000;
+
+// Set up MongoDB connection using Mongoose
+mongoose.connect('mongodb://localhost:27017/cesium-czml-db', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+const db = mongoose.connection;
+
+// Define MongoDB schema and model for CZML files
+const czmlSchema = new mongoose.Schema({
+  name: String,
+  location: String,
+});
+const CzmlFile = mongoose.model('CzmlFile', czmlSchema);
+
+// Set up Multer for handling file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'public/uploads/'); // Destination directory for file uploads
+  },
+  filename: (req, file, cb) => {
+    const filename = `${Date.now()}-${file.originalname}`;
+    cb(null, filename);
+  },
+});
+
+const upload = multer({ storage });
+
+// API route for uploading CZML files
+app.post('/api/uploadCzml', upload.single('czmlFile'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    const { originalname, path: filePath } = req.file;
+
+    // Create a new CZML file record in MongoDB
+    const czmlFile = new CzmlFile({
+      name: originalname,
+      location: filePath,
+    });
+
+    czmlFile.save((err) => {
+      if (err) {
+        return res.status(500).json({ error: 'Failed to save CZML file information' });
+      }
+
+      res.json({ message: 'CZML file uploaded and data saved successfully' });
+    });
+  } catch (error) {
+    console.error('Error uploading CZML file:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// API route for fetching filenames from MongoDB
+app.get('/api/getFilenames', (req, res) => {
+  CzmlFile.find({}, 'name', (err, files) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to fetch filenames' });
+    }
+
+    const filenames = files.map((file) => file.name);
+    res.json(filenames);
+  });
+});
+
+// API route for serving CZML files
+app.get('/api/getCzmlFile/:filename', (req, res) => {
+  const { filename } = req.params;
+
+  // Construct the file path
+  const filePath = path.join(__dirname, 'public/uploads', filename);
+
+  // Check if the file exists
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'CZML file not found' });
+  }
+
+  // Serve the file
+  res.sendFile(filePath);
+});
+
+// Start the server
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+});
