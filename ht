@@ -1,0 +1,60 @@
+<!-- public/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Cesium CZML Viewer</title>
+    <link href="/cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="/cesium/Cesium.js"></script>
+</head>
+<body>
+    <div id="cesiumContainer" style="height: 600px;"></div>
+    <form id="czmlFileUploadForm" enctype="multipart/form-data">
+        <input type="file" id="czmlFileInput" name="czmlFile">
+        <button type="submit">Upload CZML File</button>
+    </form>
+    <select id="filenameDropdown"></select>
+
+    <script>
+        const viewer = new Cesium.Viewer('cesiumContainer');
+        const backendUrl = 'http://localhost:5000'; // Replace with your backend URL
+
+        // Function to fetch filenames from the backend and populate the dropdown menu
+        function fetchFilenames() {
+            axios.get(`${backendUrl}/api/getFilenames`)
+                .then((response) => {
+                    const filenames = response.data;
+
+                    const dropdown = document.getElementById('filenameDropdown');
+                    filenames.forEach((filename) => {
+                        const option = document.createElement('option');
+                        option.text = filename;
+                        option.value = filename;
+                        dropdown.appendChild(option);
+                    });
+                })
+                .catch((error) => {
+                    console.error('Error fetching filenames:', error);
+                });
+        }
+
+        // Event handler for file upload form submission
+        const fileUploadForm = document.getElementById('czmlFileUploadForm');
+        const fileInput = document.getElementById('czmlFileInput');
+
+        fileUploadForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+
+            const file = fileInput.files[0];
+
+            if (file) {
+                const formData = new FormData();
+                formData.append('czmlFile', file);
+
+                // Send the CZML file to the backend for upload
+                axios.post(`${backendUrl}/api/uploadCzml`, formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                })
+                    .then((response) =>
